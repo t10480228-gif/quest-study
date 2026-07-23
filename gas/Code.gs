@@ -28,8 +28,9 @@ var TOKEN = "YOUR_SECRET_TOKEN";
 var CELL = "A1"; // データを保存するセル（変更不要）
 
 /**
- * GET: データを読み込む
- * 呼び出し例: fetch(GAS_URL + "?token=xxx")
+ * GET: データの読み込み＆保存を両方処理する
+ *   読み込み: ?token=xxx
+ *   保存:     ?token=xxx&method=save&data=...
  */
 function doGet(e) {
   if (!e || e.parameter.token !== TOKEN) {
@@ -39,8 +40,18 @@ function doGet(e) {
   }
 
   var sheet = SpreadsheetApp.openById(SHEET_ID).getActiveSheet();
-  var value = sheet.getRange(CELL).getValue();
 
+  // method=save のときは保存処理
+  if (e.parameter.method === "save") {
+    var data = e.parameter.data;
+    sheet.getRange(CELL).setValue(data);
+    return ContentService
+      .createTextOutput(JSON.stringify({ ok: true }))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // それ以外は読み込み
+  var value = sheet.getRange(CELL).getValue();
   return ContentService
     .createTextOutput(value || "null")
     .setMimeType(ContentService.MimeType.JSON);
