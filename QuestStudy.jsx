@@ -20,8 +20,8 @@ const STORAGE_KEY = "questudy_state_v1";
    TOKEN   : gas/Code.gs の TOKEN と同じ文字列
    ============================================================ */
 
-const GAS_URL = "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec";
-const TOKEN   = "YOUR_SECRET_TOKEN";
+const GAS_URL = import.meta.env.VITE_GAS_URL;
+const TOKEN   = import.meta.env.VITE_TOKEN;
 
 /* ---------------- storage adapter ---------------- */
 /**
