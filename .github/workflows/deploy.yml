@@ -24,15 +24,12 @@ jobs:
 
       - name: Build
         run: npm run build
+        env:
+          VITE_GAS_URL: ${{ secrets.VITE_GAS_URL }}
+          VITE_TOKEN:   ${{ secrets.VITE_TOKEN }}
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
-
-      - name: Build
-        run: npm run build
-        env:
-          VITE_GAS_URL: ${{ secrets.VITE_GAS_URL }}
-          VITE_TOKEN:   ${{ secrets.VITE_TOKEN }}
