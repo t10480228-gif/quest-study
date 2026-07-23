@@ -45,10 +45,12 @@ const storage = {
       localStorage.setItem(STORAGE_KEY, value);
       return;
     }
+    // GASはContent-Type: application/jsonを付けるとCORSプリフライトが発生して405になる。
+    // URLSearchParams（application/x-www-form-urlencoded）で送るとプリフライトが不要になる。
+    const params = new URLSearchParams({ token: TOKEN, data: value });
     await fetch(GAS_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: TOKEN, data: value }),
+      body: params,
     });
   },
 };

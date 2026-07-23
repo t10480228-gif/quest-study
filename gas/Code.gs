@@ -51,23 +51,18 @@ function doGet(e) {
  * 呼び出し例: fetch(GAS_URL, { method:"POST", body: JSON.stringify({ token:"xxx", data:"..." }) })
  */
 function doPost(e) {
-  var payload;
-  try {
-    payload = JSON.parse(e.postData.contents);
-  } catch (err) {
-    return ContentService
-      .createTextOutput(JSON.stringify({ error: "invalid json" }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
+  // URLSearchParams（application/x-www-form-urlencoded）で受け取る
+  var token = e.parameter.token;
+  var data  = e.parameter.data;
 
-  if (payload.token !== TOKEN) {
+  if (token !== TOKEN) {
     return ContentService
       .createTextOutput(JSON.stringify({ error: "unauthorized" }))
       .setMimeType(ContentService.MimeType.JSON);
   }
 
   var sheet = SpreadsheetApp.openById(SHEET_ID).getActiveSheet();
-  sheet.getRange(CELL).setValue(payload.data);
+  sheet.getRange(CELL).setValue(data);
 
   return ContentService
     .createTextOutput(JSON.stringify({ ok: true }))
