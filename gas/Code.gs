@@ -62,9 +62,13 @@ function doGet(e) {
  * 呼び出し例: fetch(GAS_URL, { method:"POST", body: JSON.stringify({ token:"xxx", data:"..." }) })
  */
 function doPost(e) {
-  // URLSearchParams（application/x-www-form-urlencoded）で受け取る
-  var token = e.parameter.token;
-  var data  = e.parameter.data;
+  // フロントエンドは Content-Type: text/plain で JSON 文字列を送る。
+  // GAS は text/plain を e.postData.contents に格納する。
+  var body = {};
+  try { body = JSON.parse(e.postData.contents); } catch (_) {}
+
+  var token = body.token;
+  var data  = body.data;
 
   if (token !== TOKEN) {
     return ContentService

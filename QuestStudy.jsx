@@ -45,13 +45,15 @@ const storage = {
       localStorage.setItem(STORAGE_KEY, value);
       return;
     }
-    // GASはPOSTでリダイレクト(302)が発生するため、データをクエリパラメータに乗せてGETで送る。
-    // no-corsモードで送信することでCORSエラーを回避する（レスポンスは読めないが保存は成功する）。
-    const params = new URLSearchParams({ token: TOKEN, data: value, method: "save" });
-    await fetch(`${GAS_URL}?${params.toString()}`, {
-      method: "GET",
-      mode: "no-cors",
+    // GASのウェブアプリはPOSTのJSONボディを e.postData.contents で受け取る。
+    // redirect: "follow" でGoogleの認証リダイレクトにも追従する。
+    const res = await fetch(GAS_URL, {
+      method: "POST",
+      redirect: "follow",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({ token: TOKEN, data: value }),
     });
+    if (!res.ok) throw new Error(`save failed: ${res.status}`);
   },
 };
 
