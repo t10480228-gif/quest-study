@@ -9,7 +9,7 @@ import {
    QuestStudy — 夏休みの宿題をゲームにしよう
    ============================================================ */
 
-const STORAGE_KEY = "questudy_state_v1";
+const STORAGE_KEY_PREFIX = "questudy_state_v1_";
 
 /* ============================================================
    ★ Google Apps Script 連携設定
@@ -25,24 +25,26 @@ const TOKEN   = import.meta.env.VITE_TOKEN;
 
 /* ---------------- storage adapter ---------------- */
 /**
- * window.storage (クリメモ専用API) の代わりに
- * Google Apps Script WebAPI を使うアダプター。
+ * ユーザー名をキーとして Google Apps Script / localStorage に保存するアダプター。
+ * GAS 側ではユーザー名をシート名として別シートに保存する。
  *
  * ローカル開発時は localStorage にフォールバックする。
  */
 const storage = {
-  async get() {
+  async get(userName) {
     // ローカル開発（localhost）はlocalStorageを使う
     if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
-      return { value: localStorage.getItem(STORAGE_KEY) };
+      return { value: localStorage.getItem(STORAGE_KEY_PREFIX + userName) };
     }
-    const res = await fetch(`${GAS_URL}?token=${encodeURIComponent(TOKEN)}`);
+    const res = await fetch(
+      `${GAS_URL}?token=${encodeURIComponent(TOKEN)}&user=${encodeURIComponent(userName)}`
+    );
     const text = await res.text();
     return { value: text === "null" ? null : text };
   },
-  async set(_key, value) {
+  async set(userName, value) {
     if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
-      localStorage.setItem(STORAGE_KEY, value);
+      localStorage.setItem(STORAGE_KEY_PREFIX + userName, value);
       return;
     }
     // GASのウェブアプリはPOSTのJSONボディを e.postData.contents で受け取る。
@@ -51,7 +53,7 @@ const storage = {
       method: "POST",
       redirect: "follow",
       headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify({ token: TOKEN, data: value }),
+      body: JSON.stringify({ token: TOKEN, user: userName, data: value }),
     });
     if (!res.ok) throw new Error(`save failed: ${res.status}`);
   },
@@ -674,6 +676,38 @@ function GlobalStyle() {
       .qs-error .err-icon { font-size: 44px; }
       .qs-error h2 { font-size: 16px; color: var(--c-navy); margin: 0; }
       .qs-error p { font-size: 12.5px; color: var(--c-sub); margin: 0; line-height: 1.7; }
+
+      /* ---- ログイン画面 ---- */
+      .qs-login {
+        flex: 1; display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        background: linear-gradient(160deg, var(--c-navy), #26385E 60%, var(--c-navy));
+        padding: 32px 28px; gap: 0;
+      }
+      .qs-login .login-logo { font-size: 48px; margin-bottom: 10px; animation: qs-bounce 1.6s ease-in-out infinite; }
+      .qs-login h1 { font-family:'M PLUS Rounded 1c',sans-serif; font-size: 22px; color: #fff; margin: 0 0 4px; }
+      .qs-login .login-sub { font-size: 12.5px; color: #B9C4DE; margin: 0 0 28px; }
+      .qs-login-card {
+        background: #fff;
+        border-radius: 20px;
+        padding: 24px 20px;
+        width: 100%;
+        box-sizing: border-box;
+        display: flex; flex-direction: column; gap: 14px;
+      }
+      .qs-login-card label { font-size: 12.5px; font-weight: 700; color: var(--c-navy); }
+      .qs-login-card input[type=text] {
+        width: 100%; box-sizing: border-box;
+        border: 2px solid #EFE3CF;
+        background: #FFFDF8;
+        border-radius: 12px;
+        padding: 12px 14px;
+        font-size: 15px;
+        font-family: 'Zen Maru Gothic', sans-serif;
+        color: var(--c-ink);
+        margin-top: 6px;
+      }
+      .qs-login-card input[type=text]:focus { outline: 2px solid var(--c-blue); border-color: var(--c-blue); }
     `}</style>
   );
 }
@@ -706,6 +740,46 @@ function BackHeader({ title, onBack }) {
     <div className="qs-back-header">
       <button onClick={onBack}><ChevronLeft size={18} /></button>
       <h2>{title}</h2>
+    </div>
+  );
+}
+
+/* ============================================================
+   Login
+   ============================================================ */
+
+function LoginScreen({ onLogin }) {
+  const [name, setName] = useState("");
+  const handleSubmit = () => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    onLogin(trimmed);
+  };
+  return (
+    <div className="qs-login">
+      <div className="login-logo">⚔️📚</div>
+      <h1 className="qs-display">QuestStudy</h1>
+      <p className="login-sub">夏休みの宿題をゲームにしよう</p>
+      <div className="qs-login-card">
+        <div>
+          <label>ユーザー名を入力してください</label>
+          <input
+            type="text"
+            placeholder="例：太郎"
+            value={name}
+            onChange={e => setName(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleSubmit()}
+            autoFocus
+          />
+        </div>
+        <button
+          className="qs-btn-primary"
+          onClick={handleSubmit}
+          disabled={!name.trim()}
+        >
+          はじめる
+        </button>
+      </div>
     </div>
   );
 }
@@ -1071,7 +1145,7 @@ function Achievements({ data }) {
    Settings
    ============================================================ */
 
-function Settings({ settings, onSave, onReset }) {
+function Settings({ settings, onSave, onReset, onLogout }) {
   const [name, setName] = useState(settings.name);
   const [start, setStart] = useState(settings.summerStart);
   const [end, setEnd] = useState(settings.summerEnd);
@@ -1110,6 +1184,9 @@ function Settings({ settings, onSave, onReset }) {
         <button className="qs-btn-danger" onClick={onReset}>
           <Trash2 size={14} style={{ verticalAlign: -2 }} /> データをリセット
         </button>
+        <button className="qs-btn-danger" onClick={onLogout} style={{ marginTop: 6 }}>
+          ログアウト
+        </button>
       </div>
     </>
   );
@@ -1120,6 +1197,11 @@ function Settings({ settings, onSave, onReset }) {
    ============================================================ */
 
 export default function App() {
+  // ログイン中のユーザー名。null のときはログイン画面を表示。
+  // sessionStorage に保持することでタブを閉じると自動ログアウト。
+  const [currentUser, setCurrentUser] = useState(
+    () => sessionStorage.getItem("qs_current_user") || null
+  );
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [data, setData] = useState(null);
@@ -1137,14 +1219,14 @@ export default function App() {
   }, []);
 
   // --------------------------------------------------------
-  // ★ データ読み込み（window.storage → GAS fetch に差し替え）
+  // ★ データ読み込み（ユーザー名をキーに GAS から取得）
   // --------------------------------------------------------
-  const loadData = useCallback(async () => {
+  const loadData = useCallback(async (userName) => {
     setLoadError(null);
     setLoaded(false);
     setScreen("loading");
     try {
-      const res = await storage.get();
+      const res = await storage.get(userName);
       let d = null;
       if (res?.value) {
         try { d = JSON.parse(res.value); } catch { d = null; }
@@ -1156,29 +1238,54 @@ export default function App() {
       setTimeout(() => setScreen("home"), 800);
     } catch (e) {
       setLoadError("サーバーへの接続に失敗しました。\nWi-Fiを確認してもう一度お試しください。");
+      setScreen("error");
     }
   }, []);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // ログイン済みの場合はマウント時にデータを読み込む
+  useEffect(() => {
+    if (currentUser) loadData(currentUser);
+  }, [currentUser, loadData]);
+
+  // ログイン未済の場合はログイン画面を表示
+  useEffect(() => {
+    if (!currentUser) setScreen("login");
+  }, [currentUser]);
 
   // --------------------------------------------------------
-  // ★ データ保存（window.storage → GAS fetch に差し替え）
+  // ★ データ保存（ユーザー名をキーに GAS へ書き込み）
   //    連続操作で何度も叩かないよう 1.5秒デバウンス
   // --------------------------------------------------------
   useEffect(() => {
-    if (!loaded || !data) return;
+    if (!loaded || !data || !currentUser) return;
     clearTimeout(saveTimer.current);
     setSaving(true);
     saveTimer.current = setTimeout(async () => {
       try {
-        await storage.set(STORAGE_KEY, JSON.stringify(data));
+        await storage.set(currentUser, JSON.stringify(data));
       } catch {
         showToast("⚠️ 保存に失敗しました");
       } finally {
         setSaving(false);
       }
     }, 1500);
-  }, [data, loaded, showToast]);
+  }, [data, loaded, currentUser, showToast]);
+
+  // ログイン処理
+  const handleLogin = (userName) => {
+    sessionStorage.setItem("qs_current_user", userName);
+    setCurrentUser(userName);
+  };
+
+  // ログアウト処理
+  const handleLogout = () => {
+    if (!window.confirm("ログアウトしますか？")) return;
+    clearTimeout(saveTimer.current);
+    sessionStorage.removeItem("qs_current_user");
+    setCurrentUser(null);
+    setData(null);
+    setLoaded(false);
+  };
 
   const go = (s) => setScreen(s);
 
@@ -1267,10 +1374,11 @@ export default function App() {
       )}
 
       {/* 画面ルーティング */}
+      {screen === "login"   && <LoginScreen onLogin={handleLogin} />}
       {screen === "splash"  && <Splash />}
       {screen === "loading" && <LoadingScreen />}
       {screen === "error"   && (
-        <ErrorScreen message={loadError} onRetry={loadData} />
+        <ErrorScreen message={loadError} onRetry={() => loadData(currentUser)} />
       )}
 
       {loaded && data && screen === "home" && (
@@ -1292,16 +1400,11 @@ export default function App() {
         <Achievements data={data} />
       )}
       {loaded && data && screen === "settings" && (
-        <Settings settings={data.settings} onSave={handleSaveSettings} onReset={handleReset} />
-      )}
-
-      {/* エラー時は再試行ボタンのみ表示 */}
-      {screen === "error" && loadError && (
-        <ErrorScreen message={loadError} onRetry={loadData} />
+        <Settings settings={data.settings} onSave={handleSaveSettings} onReset={handleReset} onLogout={handleLogout} />
       )}
 
       {loaded && data &&
-        screen !== "splash" && screen !== "loading" && screen !== "error" &&
+        screen !== "login" && screen !== "splash" && screen !== "loading" && screen !== "error" &&
         screen !== "taskForm" && screen !== "taskEdit" && screen !== "taskDetail" && (
         <BottomNav screen={screen} go={setScreen} />
       )}

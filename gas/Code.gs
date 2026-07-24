@@ -28,9 +28,20 @@ var TOKEN = "YOUR_SECRET_TOKEN";
 var CELL = "A1"; // データを保存するセル（変更不要）
 
 /**
- * GET: データの読み込み＆保存を両方処理する
- *   読み込み: ?token=xxx
- *   保存:     ?token=xxx&method=save&data=...
+ * ユーザー名に対応するシートを取得する。
+ * シートが存在しない場合は新規作成する。
+ */
+function getSheetForUser(ss, userName) {
+  var sheet = ss.getSheetByName(userName);
+  if (!sheet) {
+    sheet = ss.insertSheet(userName);
+  }
+  return sheet;
+}
+
+/**
+ * GET: データの読み込み
+ *   ?token=xxx&user=ユーザー名
  */
 function doGet(e) {
   if (!e || e.parameter.token !== TOKEN) {
@@ -39,18 +50,10 @@ function doGet(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  var sheet = SpreadsheetApp.openById(SHEET_ID).getActiveSheet();
+  var userName = e.parameter.user || "default";
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = getSheetForUser(ss, userName);
 
-  // method=save のときは保存処理
-  if (e.parameter.method === "save") {
-    var data = e.parameter.data;
-    sheet.getRange(CELL).setValue(data);
-    return ContentService
-      .createTextOutput(JSON.stringify({ ok: true }))
-      .setMimeType(ContentService.MimeType.JSON);
-  }
-
-  // それ以外は読み込み
   var value = sheet.getRange(CELL).getValue();
   return ContentService
     .createTextOutput(value || "null")
@@ -59,7 +62,7 @@ function doGet(e) {
 
 /**
  * POST: データを保存する
- * 呼び出し例: fetch(GAS_URL, { method:"POST", body: JSON.stringify({ token:"xxx", data:"..." }) })
+ * body: { token, user, data }
  */
 function doPost(e) {
   // フロントエンドは Content-Type: text/plain で JSON 文字列を送る。
@@ -67,8 +70,9 @@ function doPost(e) {
   var body = {};
   try { body = JSON.parse(e.postData.contents); } catch (_) {}
 
-  var token = body.token;
-  var data  = body.data;
+  var token    = body.token;
+  var userName = body.user || "default";
+  var data     = body.data;
 
   if (token !== TOKEN) {
     return ContentService
@@ -76,7 +80,8 @@ function doPost(e) {
       .setMimeType(ContentService.MimeType.JSON);
   }
 
-  var sheet = SpreadsheetApp.openById(SHEET_ID).getActiveSheet();
+  var ss = SpreadsheetApp.openById(SHEET_ID);
+  var sheet = getSheetForUser(ss, userName);
   sheet.getRange(CELL).setValue(data);
 
   return ContentService
