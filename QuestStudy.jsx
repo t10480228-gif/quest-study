@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Check, Plus, Star, Coins, Trophy, Settings as SettingsIcon,
   BookOpen, Home as HomeIcon, ChevronLeft, Lock, Flame, Sparkles,
-  Trash2, Pencil
+  Trash2, Pencil, GripVertical, RotateCcw
 } from "lucide-react";
 
 /* ============================================================
@@ -11,28 +11,12 @@ import {
 
 const STORAGE_KEY_PREFIX = "questudy_state_v1_";
 
-/* ============================================================
-   ★ Google Apps Script 連携設定
-   ============================================================
-   gas/Code.gs をデプロイした後、以下の2つを書き換えてください。
-
-   GAS_URL : デプロイ時に発行された「ウェブアプリのURL」
-   TOKEN   : gas/Code.gs の TOKEN と同じ文字列
-   ============================================================ */
-
 const GAS_URL = import.meta.env.VITE_GAS_URL;
 const TOKEN   = import.meta.env.VITE_TOKEN;
 
 /* ---------------- storage adapter ---------------- */
-/**
- * ユーザー名をキーとして Google Apps Script / localStorage に保存するアダプター。
- * GAS 側ではユーザー名をシート名として別シートに保存する。
- *
- * ローカル開発時は localStorage にフォールバックする。
- */
 const storage = {
   async get(userName) {
-    // ローカル開発（localhost）はlocalStorageを使う
     if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
       return { value: localStorage.getItem(STORAGE_KEY_PREFIX + userName) };
     }
@@ -47,8 +31,6 @@ const storage = {
       localStorage.setItem(STORAGE_KEY_PREFIX + userName, value);
       return;
     }
-    // GASのウェブアプリはPOSTのJSONボディを e.postData.contents で受け取る。
-    // redirect: "follow" でGoogleの認証リダイレクトにも追従する。
     const res = await fetch(GAS_URL, {
       method: "POST",
       redirect: "follow",
@@ -67,30 +49,66 @@ const TYPE_META = {
   SINGLE: { label: "単発",   unit: "個",     xp: 100, coin: 50, color: "var(--c-pink)" },
 };
 
+/* 改善3: 教科カテゴリ定数 */
+const SUBJECT_CATEGORIES = [
+  { id: "math",     label: "算数",       icon: "🧮" },
+  { id: "japanese", label: "国語",       icon: "📝" },
+  { id: "science",  label: "理科",       icon: "🔬" },
+  { id: "social",   label: "社会",       icon: "🌍" },
+  { id: "english",  label: "英語",       icon: "🔤" },
+  { id: "research", label: "自由研究",   icon: "🧪" },
+  { id: "essay",    label: "読書感想文", icon: "📖" },
+  { id: "other",    label: "その他",     icon: "📌" },
+];
+
+/* 改善4: アチーブメント一覧（連続日数系・カテゴリ実績を拡充） */
 const ACHIEVEMENTS = [
-  { id: "beginner",   title: "初心者",       desc: "初めて宿題を登録",     icon: "🔰", xp: 10,  coin: 5,
+  { id: "beginner",   title: "初心者",         desc: "初めて宿題を登録",          icon: "🔰", xp: 10,  coin: 5,
     cond: (d) => d.tasks.length >= 1 },
-  { id: "first_clear",title: "初クリア",     desc: "初めて宿題を完了",     icon: "🏅", xp: 20,  coin: 10,
+  { id: "first_clear",title: "初クリア",       desc: "初めて宿題を完了",          icon: "🏅", xp: 20,  coin: 10,
     cond: (d) => d.tasks.some(t => t.completed) },
-  { id: "today_100",  title: "今日も頑張った", desc: "今日のクエスト100%", icon: "🌟", xp: 15,  coin: 10,
+  { id: "today_100",  title: "今日も頑張った", desc: "今日のクエスト100%",        icon: "🌟", xp: 15,  coin: 10,
     cond: (d) => { const q = d.dailyQuestsByDate[todayStr()] || []; return q.length > 0 && q.every(x => x.completed); } },
-  { id: "streak3",    title: "3日連続",      desc: "3日連続達成",         icon: "🔥", xp: 30,  coin: 15,
+
+  /* 連続日数（改善4: 3/5/7/10/15/20/30日） */
+  { id: "streak3",    title: "3日連続",        desc: "3日連続達成",               icon: "🔥", xp: 30,  coin: 15,
     cond: (d) => (d.user.streak || 0) >= 3 },
-  { id: "streak7",    title: "7日連続",      desc: "7日連続達成",         icon: "🔥", xp: 70,  coin: 35,
+  { id: "streak5",    title: "5日連続",        desc: "5日連続達成",               icon: "🔥", xp: 50,  coin: 25,
+    cond: (d) => (d.user.streak || 0) >= 5 },
+  { id: "streak7",    title: "7日連続",        desc: "7日連続達成",               icon: "🔥", xp: 70,  coin: 35,
     cond: (d) => (d.user.streak || 0) >= 7 },
-  { id: "coco50",     title: "コツコツ",     desc: "50XP獲得",            icon: "🐢", xp: 5,   coin: 5,
+  { id: "streak10",   title: "10日連続",       desc: "10日連続達成",              icon: "🔥", xp: 100, coin: 50,
+    cond: (d) => (d.user.streak || 0) >= 10 },
+  { id: "streak15",   title: "15日連続",       desc: "15日連続達成",              icon: "🔥", xp: 150, coin: 75,
+    cond: (d) => (d.user.streak || 0) >= 15 },
+  { id: "streak20",   title: "20日連続",       desc: "20日連続達成",              icon: "🔥", xp: 200, coin: 100,
+    cond: (d) => (d.user.streak || 0) >= 20 },
+  { id: "streak30",   title: "30日連続",       desc: "30日連続達成",              icon: "🔥", xp: 300, coin: 150,
+    cond: (d) => (d.user.streak || 0) >= 30 },
+
+  /* XP系 */
+  { id: "coco50",     title: "コツコツ",       desc: "50XP獲得",                  icon: "🐢", xp: 5,   coin: 5,
     cond: (d) => d.user.xp >= 50 },
-  { id: "doryoku500", title: "努力家",       desc: "500XP獲得",           icon: "💪", xp: 50,  coin: 25,
+  { id: "doryoku500", title: "努力家",         desc: "500XP獲得",                 icon: "💪", xp: 50,  coin: 25,
     cond: (d) => d.user.xp >= 500 },
-  { id: "sansu",      title: "算数マスター", desc: "算数100ページ",       icon: "🧮", xp: 100, coin: 50,
-    cond: (d) => sumByTitle(d.tasks, "算数", "PAGE") >= 100 },
-  { id: "kanji",      title: "漢字博士",     desc: "漢字50枚",            icon: "📖", xp: 80,  coin: 40,
-    cond: (d) => sumByTitle(d.tasks, "漢字") >= 50 },
-  { id: "jiyu",       title: "自由研究完了", desc: "単発タスク達成",       icon: "🔬", xp: 60,  coin: 30,
-    cond: (d) => d.tasks.some(t => t.type === "SINGLE" && t.completed) },
-  { id: "master",     title: "宿題マスター", desc: "全宿題完了",           icon: "👑", xp: 200, coin: 100,
+
+  /* 改善4: 教科カテゴリ実績（算数はカテゴリで判定に変更） */
+  { id: "sansu",      title: "算数マスター",   desc: "算数100ページ達成",         icon: "🧮", xp: 100, coin: 50,
+    cond: (d) => sumByCategory(d.tasks, "math", "PAGE") >= 100 },
+  { id: "kanji",      title: "漢字博士",       desc: "国語50ページ達成",          icon: "📝", xp: 80,  coin: 40,
+    cond: (d) => sumByCategory(d.tasks, "japanese") >= 50 },
+
+  /* 改善4: 自由研究 = 自由研究カテゴリのタスクが完了したら */
+  { id: "jiyu",       title: "自由研究完了",   desc: "自由研究カテゴリ達成",      icon: "🧪", xp: 60,  coin: 30,
+    cond: (d) => d.tasks.some(t => t.subject === "research" && t.completed) },
+
+  /* 改善4: 読書感想文マスター */
+  { id: "essay",      title: "読書感想文マスター", desc: "読書感想文タスク完了",   icon: "📖", xp: 60,  coin: 30,
+    cond: (d) => d.tasks.some(t => t.subject === "essay" && t.completed) },
+
+  { id: "master",     title: "宿題マスター",   desc: "全宿題完了",                icon: "👑", xp: 200, coin: 100,
     cond: (d) => d.tasks.length > 0 && d.tasks.every(t => t.completed) },
-  { id: "early",      title: "期限前達成",   desc: "締切3日前に終了",     icon: "⏰", xp: 40,  coin: 20,
+  { id: "early",      title: "期限前達成",     desc: "締切3日前に終了",           icon: "⏰", xp: 40,  coin: 20,
     cond: (d) => d.tasks.some(t => t.completed && t.completedDate && daysBetween(t.completedDate, t.deadline) >= 3) },
 ];
 
@@ -113,8 +131,10 @@ function daysBetween(a, b) {
 function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
 function uid() { return Math.random().toString(36).slice(2, 10) + Date.now().toString(36); }
 
-function sumByTitle(tasks, keyword, type) {
-  return tasks.filter(t => t.title.includes(keyword) && (!type || t.type === type))
+/* 改善3: カテゴリ別進捗合計 */
+function sumByCategory(tasks, subjectId, type) {
+  return tasks
+    .filter(t => t.subject === subjectId && (!type || t.type === type))
     .reduce((s, t) => s + t.progress, 0);
 }
 
@@ -151,16 +171,19 @@ function defaultData() {
 
 /* ---------------- core mutation helpers (pure) ---------------- */
 
+/* 改善1: タスク並び順を考慮してクエストを生成 */
 function ensureTodayQuests(data) {
   const today = todayStr();
   const d = structuredClone(data);
   if (!d.dailyQuestsByDate[today]) {
+    const sorted = [...d.tasks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     const quests = [];
-    for (const task of d.tasks) {
+    for (const task of sorted) {
       const goal = calcDailyGoal(task, today);
       if (goal > 0) {
         quests.push({ taskId: task.id, targetAmount: goal, completedAmount: 0, completed: false });
-        task.dailyGoal = goal;
+        const orig = d.tasks.find(t => t.id === task.id);
+        if (orig) orig.dailyGoal = goal;
       }
     }
     d.dailyQuestsByDate[today] = quests;
@@ -202,35 +225,62 @@ function completeQuest(data, taskId) {
   const meta = TYPE_META[task.type];
   const amount = quest.targetAmount;
   task.progress = Math.min(task.target, task.progress + amount);
-  const xpGain = amount * meta.xp;
-  const coinGain = amount * meta.coin;
-  d.user.xp += xpGain;
-  d.user.coin += coinGain;
+  d.user.xp    += amount * meta.xp;
+  d.user.coin  += amount * meta.coin;
 
   if (task.progress >= task.target) {
     task.completed = true;
     task.completedDate = today;
   }
 
-  const allDone = quests.length > 0 && quests.every(q => q.completed);
-  if (allDone) {
-    const yesterday = addDays(today, -1);
-    if (d.user.lastStreakDate === yesterday) d.user.streak = (d.user.streak || 0) + 1;
-    else if (d.user.lastStreakDate !== today) d.user.streak = 1;
-    d.user.lastStreakDate = today;
-  }
+  /* ストリーク: 1つでもクエストをクリアしたら連続日数をカウント（改善4） */
+  const yesterday = addDays(today, -1);
+  if (d.user.lastStreakDate === yesterday) d.user.streak = (d.user.streak || 0) + 1;
+  else if (d.user.lastStreakDate !== today) d.user.streak = 1;
+  d.user.lastStreakDate = today;
 
   return evalAchievements(d);
+}
+
+/* 改善2: クエスト完了を取り消す */
+function uncompleteQuest(data, taskId) {
+  const d = structuredClone(data);
+  const today = todayStr();
+  const quests = d.dailyQuestsByDate[today] || [];
+  const quest = quests.find(q => q.taskId === taskId);
+  if (!quest || !quest.completed) return d;
+  const task = d.tasks.find(t => t.id === taskId);
+  if (!task) return d;
+
+  const meta = TYPE_META[task.type];
+  const amount = quest.completedAmount || quest.targetAmount;
+
+  quest.completed = false;
+  quest.completedAmount = 0;
+
+  task.progress = Math.max(0, task.progress - amount);
+  d.user.xp    = Math.max(0, d.user.xp   - amount * meta.xp);
+  d.user.coin  = Math.max(0, d.user.coin - amount * meta.coin);
+
+  if (task.completed) {
+    task.completed = false;
+    task.completedDate = null;
+  }
+
+  return d;
 }
 
 function addTask(data, taskInput) {
   const d = structuredClone(data);
   const meta = TYPE_META[taskInput.type];
   const target = taskInput.type === "SINGLE" ? 1 : Number(taskInput.target) || 1;
+  /* 改善1: orderは既存タスク数+1 */
+  const maxOrder = d.tasks.reduce((m, t) => Math.max(m, t.order ?? 0), 0);
   const task = {
     id: uid(),
     title: taskInput.title.trim() || "無題の宿題",
     type: taskInput.type,
+    subject: taskInput.subject || "other",   /* 改善3 */
     target,
     progress: 0,
     deadline: taskInput.deadline,
@@ -240,6 +290,7 @@ function addTask(data, taskInput) {
     xpPerUnit: meta.xp,
     coinPerUnit: meta.coin,
     createdAt: todayStr(),
+    order: maxOrder + 1,                      /* 改善1 */
   };
   d.tasks.push(task);
   return evalAchievements(d);
@@ -275,6 +326,19 @@ function completeTaskDirectly(data, taskId) {
   task.completed = true;
   task.completedDate = todayStr();
   return evalAchievements(d);
+}
+
+/* 改善1: タスクの順序を変更する */
+function reorderTasks(data, fromIndex, toIndex) {
+  const d = structuredClone(data);
+  const sorted = [...d.tasks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const [moved] = sorted.splice(fromIndex, 1);
+  sorted.splice(toIndex, 0, moved);
+  sorted.forEach((t, i) => {
+    const orig = d.tasks.find(x => x.id === t.id);
+    if (orig) orig.order = i;
+  });
+  return d;
 }
 
 /* ============================================================
@@ -460,6 +524,13 @@ function GlobalStyle() {
         color: #fff;
         transform: scale(1.08) rotate(-8deg);
       }
+      /* 改善2: 取り消し可能スタンプ（完了済みをタップで取り消し） */
+      .qs-stamp-circle.undo-hint {
+        background: var(--c-green);
+        border-color: var(--c-green);
+        color: #fff;
+        opacity: 0.75;
+      }
 
       .qs-empty {
         text-align: center;
@@ -500,14 +571,29 @@ function GlobalStyle() {
         padding: 14px 16px;
         margin-bottom: 12px;
         box-shadow: 0 2px 8px rgba(43,35,32,0.06);
-        cursor: pointer;
         border-left: 6px solid var(--c-blue);
+        display: flex;
+        align-items: center;
+        gap: 10px;
       }
+      .qs-task-card-content { flex: 1; cursor: pointer; min-width: 0; }
       .qs-task-card .tt-top { display: flex; justify-content: space-between; align-items: baseline; }
       .qs-task-card .tt-title { font-weight: 700; font-size: 15px; }
       .qs-task-card .tt-pct { font-family:'Fredoka',sans-serif; font-weight: 600; font-size: 13px; color: var(--c-sub); }
       .qs-task-card .tt-sub { font-size: 12px; color: var(--c-sub); margin: 4px 0 8px; }
       .qs-task-card.completed { border-left-color: var(--c-green); opacity: 0.7; }
+      /* ドラッグハンドル */
+      .qs-drag-handle {
+        color: #C4B9A9;
+        cursor: grab;
+        flex-shrink: 0;
+        padding: 4px;
+        display: flex;
+        align-items: center;
+      }
+      .qs-drag-handle:active { cursor: grabbing; }
+      .qs-task-card.dragging { opacity: 0.4; }
+      .qs-task-card.drag-over { box-shadow: 0 0 0 2px var(--c-blue); }
 
       .qs-fab {
         position: absolute;
@@ -556,6 +642,30 @@ function GlobalStyle() {
         background: #FFFDF8;
       }
       .qs-type-opt.active { border-color: var(--c-navy); color: var(--c-navy); background: #FFF1D6; }
+
+      /* 改善3: 教科カテゴリグリッド */
+      .qs-subject-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+      }
+      .qs-subject-opt {
+        border: 2px solid #EFE3CF;
+        border-radius: 12px;
+        padding: 8px 4px;
+        text-align: center;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        color: var(--c-sub);
+        background: #FFFDF8;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+      }
+      .qs-subject-opt .subj-icon { font-size: 18px; }
+      .qs-subject-opt.active { border-color: var(--c-navy); color: var(--c-navy); background: #FFF1D6; }
 
       .qs-btn-primary {
         width: 100%;
@@ -650,7 +760,6 @@ function GlobalStyle() {
         display: flex; align-items: center; gap: 8px;
       }
 
-      /* ---- 読み込み中インジケーター ---- */
       .qs-loading {
         flex: 1; display: flex; flex-direction: column;
         align-items: center; justify-content: center;
@@ -667,7 +776,6 @@ function GlobalStyle() {
       @keyframes qs-spin { to { transform: rotate(360deg); } }
       .qs-loading p { font-size: 13px; color: #B9C4DE; margin: 0; }
 
-      /* ---- エラー画面 ---- */
       .qs-error {
         flex: 1; display: flex; flex-direction: column;
         align-items: center; justify-content: center;
@@ -677,7 +785,6 @@ function GlobalStyle() {
       .qs-error h2 { font-size: 16px; color: var(--c-navy); margin: 0; }
       .qs-error p { font-size: 12.5px; color: var(--c-sub); margin: 0; line-height: 1.7; }
 
-      /* ---- ログイン画面 ---- */
       .qs-login {
         flex: 1; display: flex; flex-direction: column;
         align-items: center; justify-content: center;
@@ -824,9 +931,16 @@ function ErrorScreen({ message, onRetry }) {
    Home
    ============================================================ */
 
-function Home({ data, onCompleteQuest, go, toast }) {
+function Home({ data, onCompleteQuest, onUncompleteQuest, go, toast }) {
   const today = todayStr();
-  const quests = data.dailyQuestsByDate[today] || [];
+  /* 改善1: orderフィールドでソートしたクエストを表示 */
+  const rawQuests = data.dailyQuestsByDate[today] || [];
+  const quests = [...rawQuests].sort((a, b) => {
+    const ta = data.tasks.find(t => t.id === a.taskId);
+    const tb = data.tasks.find(t => t.id === b.taskId);
+    return (ta?.order ?? 0) - (tb?.order ?? 0);
+  });
+
   const li = levelInfo(data.user.xp);
   const xpPct = li.need > 0 ? clamp((li.into / li.need) * 100, 0, 100) : 100;
 
@@ -842,11 +956,14 @@ function Home({ data, onCompleteQuest, go, toast }) {
     const task = data.tasks.find(t => t.id === q.taskId);
     if (!task) continue;
     const meta = TYPE_META[task.type];
-    pendingXp += q.targetAmount * meta.xp;
+    pendingXp  += q.targetAmount * meta.xp;
     pendingCoin += q.targetAmount * meta.coin;
   }
 
   const doneCount = quests.filter(q => q.completed).length;
+
+  /* 改善2: 取り消しホバー状態 */
+  const [hoverUndo, setHoverUndo] = useState(null);
 
   return (
     <>
@@ -908,21 +1025,42 @@ function Home({ data, onCompleteQuest, go, toast }) {
           const task = data.tasks.find(t => t.id === q.taskId);
           if (!task) return null;
           const meta = TYPE_META[task.type];
+          const subj = SUBJECT_CATEGORIES.find(s => s.id === task.subject);
           return (
             <div key={q.taskId} className={"qs-ticket" + (q.completed ? " done" : "")}>
               <div className="qs-ticket-stripe" style={{ background: meta.color }} />
               <div className="qs-ticket-body">
-                <div className={"t-title" + (q.completed ? " done" : "")}>{task.title}</div>
+                <div className={"t-title" + (q.completed ? " done" : "")}>
+                  {subj && <span style={{ marginRight: 4 }}>{subj.icon}</span>}
+                  {task.title}
+                </div>
                 <div className="t-amount">{q.targetAmount}{meta.unit}</div>
               </div>
               <div className="qs-ticket-perf" />
+              {/* 改善2: 完了済みはもう一度タップで取り消し */}
               <button
                 className="qs-stamp"
-                disabled={q.completed}
-                onClick={() => { onCompleteQuest(task.id); toast(`+${q.targetAmount * meta.xp}XP ・ +${q.targetAmount * meta.coin}コイン`); }}
+                onClick={() => {
+                  if (q.completed) {
+                    onUncompleteQuest(task.id);
+                    toast("↩ 取り消しました");
+                  } else {
+                    onCompleteQuest(task.id);
+                    toast(`+${q.targetAmount * meta.xp}XP ・ +${q.targetAmount * meta.coin}コイン`);
+                  }
+                }}
+                onMouseEnter={() => q.completed && setHoverUndo(q.taskId)}
+                onMouseLeave={() => setHoverUndo(null)}
               >
-                <span className={"qs-stamp-circle" + (q.completed ? " checked" : "")}>
-                  <Check size={20} />
+                <span className={
+                  "qs-stamp-circle" +
+                  (q.completed
+                    ? (hoverUndo === q.taskId ? " undo-hint" : " checked")
+                    : "")
+                }>
+                  {q.completed && hoverUndo === q.taskId
+                    ? <RotateCcw size={16} />
+                    : <Check size={20} />}
                 </span>
               </button>
             </div>
@@ -944,35 +1082,81 @@ function Home({ data, onCompleteQuest, go, toast }) {
 }
 
 /* ============================================================
-   Task List
+   Task List — 改善1: ドラッグ＆ドロップ並び替え
    ============================================================ */
 
-function TaskList({ data, go, openTask }) {
+function TaskList({ data, go, openTask, onReorder }) {
   const meta = t => TYPE_META[t.type];
+  const sorted = [...data.tasks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+
+  const dragRef = useRef(null);
+  const [dragOver, setDragOver] = useState(null);
+
+  const handleDragStart = (e, index) => {
+    dragRef.current = index;
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+    setDragOver(index);
+  };
+  const handleDrop = (e, toIndex) => {
+    e.preventDefault();
+    if (dragRef.current !== null && dragRef.current !== toIndex) {
+      onReorder(dragRef.current, toIndex);
+    }
+    dragRef.current = null;
+    setDragOver(null);
+  };
+  const handleDragEnd = () => {
+    dragRef.current = null;
+    setDragOver(null);
+  };
+
   return (
     <>
       <div className="qs-header">
         <div><h1 className="qs-display">宿題一覧</h1></div>
       </div>
       <div className="qs-scroll">
-        {data.tasks.length === 0 && (
+        {sorted.length === 0 && (
           <div className="qs-empty">
             <div className="emoji">📚</div>まだ宿題がありません<br />右下の＋から追加しよう
           </div>
         )}
-        {data.tasks.map(t => {
+        {sorted.map((t, index) => {
           const pct = Math.round((t.progress / t.target) * 100);
+          const subj = SUBJECT_CATEGORIES.find(s => s.id === t.subject);
           return (
-            <div key={t.id} className={"qs-task-card" + (t.completed ? " completed" : "")}
+            <div
+              key={t.id}
+              className={
+                "qs-task-card" +
+                (t.completed ? " completed" : "") +
+                (dragOver === index ? " drag-over" : "")
+              }
               style={{ borderLeftColor: meta(t).color }}
-              onClick={() => openTask(t.id)}>
-              <div className="tt-top">
-                <div className="tt-title">{t.title}</div>
-                <div className="tt-pct">{t.completed ? "完了" : pct + "%"}</div>
+              draggable
+              onDragStart={e => handleDragStart(e, index)}
+              onDragOver={e => handleDragOver(e, index)}
+              onDrop={e => handleDrop(e, index)}
+              onDragEnd={handleDragEnd}
+            >
+              <div className="qs-drag-handle" title="ドラッグして並び替え">
+                <GripVertical size={18} />
               </div>
-              <div className="tt-sub">{t.progress} / {t.target} {meta(t).unit}</div>
-              <div className="qs-bar-track">
-                <div className="qs-bar-fill task" style={{ width: pct + "%" }} />
+              <div className="qs-task-card-content" onClick={() => openTask(t.id)}>
+                <div className="tt-top">
+                  <div className="tt-title">
+                    {subj && <span style={{ marginRight: 4 }}>{subj.icon}</span>}
+                    {t.title}
+                  </div>
+                  <div className="tt-pct">{t.completed ? "完了" : pct + "%"}</div>
+                </div>
+                <div className="tt-sub">{t.progress} / {t.target} {meta(t).unit}</div>
+                <div className="qs-bar-track">
+                  <div className="qs-bar-fill task" style={{ width: pct + "%" }} />
+                </div>
               </div>
             </div>
           );
@@ -986,18 +1170,19 @@ function TaskList({ data, go, openTask }) {
 }
 
 /* ============================================================
-   Task Form (create / edit)
+   Task Form (create / edit) — 改善3: 教科カテゴリ追加
    ============================================================ */
 
 function TaskForm({ initial, onSave, onCancel, onDelete }) {
-  const [title, setTitle] = useState(initial?.title || "");
-  const [type, setType] = useState(initial?.type || "PAGE");
-  const [target, setTarget] = useState(initial?.target || 10);
+  const [title,    setTitle]    = useState(initial?.title    || "");
+  const [type,     setType]     = useState(initial?.type     || "PAGE");
+  const [subject,  setSubject]  = useState(initial?.subject  || "other");
+  const [target,   setTarget]   = useState(initial?.target   || 10);
   const [deadline, setDeadline] = useState(initial?.deadline || addDays(todayStr(), 14));
 
   const meta = TYPE_META[type];
-  const totalXp = type === "SINGLE" ? meta.xp : (Number(target) || 0) * meta.xp;
-  const totalCoin = type === "SINGLE" ? meta.coin : (Number(target) || 0) * meta.coin;
+  const totalXp   = type === "SINGLE" ? meta.xp   : (Number(target) || 0) * meta.xp;
+  const totalCoin = type === "SINGLE" ? meta.coin  : (Number(target) || 0) * meta.coin;
 
   return (
     <>
@@ -1006,6 +1191,21 @@ function TaskForm({ initial, onSave, onCancel, onDelete }) {
         <div className="qs-field">
           <label>タイトル</label>
           <input type="text" value={title} onChange={e => setTitle(e.target.value)} placeholder="例：算数ドリル" />
+        </div>
+        <div className="qs-field">
+          <label>教科カテゴリ</label>
+          <div className="qs-subject-grid">
+            {SUBJECT_CATEGORIES.map(s => (
+              <div
+                key={s.id}
+                className={"qs-subject-opt" + (subject === s.id ? " active" : "")}
+                onClick={() => setSubject(s.id)}
+              >
+                <span className="subj-icon">{s.icon}</span>
+                {s.label}
+              </div>
+            ))}
+          </div>
         </div>
         <div className="qs-field">
           <label>種類</label>
@@ -1034,7 +1234,7 @@ function TaskForm({ initial, onSave, onCancel, onDelete }) {
             <div className="qs-pill"><Coins size={14} color="#E0A400" /> コイン {totalCoin}</div>
           </div>
         </div>
-        <button className="qs-btn-primary" onClick={() => onSave({ title, type, target, deadline })}>
+        <button className="qs-btn-primary" onClick={() => onSave({ title, type, subject, target, deadline })}>
           {initial ? "更新する" : "保存する"}
         </button>
         {initial && (
@@ -1053,10 +1253,11 @@ function TaskForm({ initial, onSave, onCancel, onDelete }) {
 
 function TaskDetail({ task, onBack, onEdit, onComplete }) {
   const meta = TYPE_META[task.type];
-  const pct = Math.round((task.progress / task.target) * 100);
+  const pct  = Math.round((task.progress / task.target) * 100);
   const today = todayStr();
-  const goal = calcDailyGoal(task, today);
+  const goal  = calcDailyGoal(task, today);
   const daysLeft = Math.max(0, daysBetween(today, task.deadline));
+  const subj = SUBJECT_CATEGORIES.find(s => s.id === task.subject);
 
   return (
     <>
@@ -1065,8 +1266,13 @@ function TaskDetail({ task, onBack, onEdit, onComplete }) {
         <div className="qs-card">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 17 }}>{task.title}</div>
-              <div style={{ fontSize: 12, color: "var(--c-sub)", marginTop: 2 }}>{meta.label}タスク</div>
+              <div style={{ fontWeight: 700, fontSize: 17 }}>
+                {subj && <span style={{ marginRight: 6 }}>{subj.icon}</span>}
+                {task.title}
+              </div>
+              <div style={{ fontSize: 12, color: "var(--c-sub)", marginTop: 2 }}>
+                {subj ? subj.label + " / " : ""}{meta.label}タスク
+              </div>
             </div>
             <button className="qs-icon-btn" style={{ background: "#FFF1D6", color: "var(--c-navy)" }} onClick={onEdit}>
               <Pencil size={15} />
@@ -1146,9 +1352,9 @@ function Achievements({ data }) {
    ============================================================ */
 
 function Settings({ settings, onSave, onReset, onLogout }) {
-  const [name, setName] = useState(settings.name);
+  const [name,  setName]  = useState(settings.name);
   const [start, setStart] = useState(settings.summerStart);
-  const [end, setEnd] = useState(settings.summerEnd);
+  const [end,   setEnd]   = useState(settings.summerEnd);
   const [notif, setNotif] = useState(settings.notification);
 
   return (
@@ -1197,20 +1403,18 @@ function Settings({ settings, onSave, onReset, onLogout }) {
    ============================================================ */
 
 export default function App() {
-  // ログイン中のユーザー名。null のときはログイン画面を表示。
-  // sessionStorage に保持することでタブを閉じると自動ログアウト。
   const [currentUser, setCurrentUser] = useState(
     () => sessionStorage.getItem("qs_current_user") || null
   );
-  const [loaded, setLoaded] = useState(false);
-  const [loadError, setLoadError] = useState(null);
-  const [data, setData] = useState(null);
-  const [screen, setScreen] = useState("splash");
-  const [selectedTaskId, setSelectedTaskId] = useState(null);
-  const [toastMsg, setToastMsg] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const [loaded,        setLoaded]        = useState(false);
+  const [loadError,     setLoadError]     = useState(null);
+  const [data,          setData]          = useState(null);
+  const [screen,        setScreen]        = useState("splash");
+  const [selectedTaskId,setSelectedTaskId]= useState(null);
+  const [toastMsg,      setToastMsg]      = useState(null);
+  const [saving,        setSaving]        = useState(false);
   const toastTimer = useRef(null);
-  const saveTimer = useRef(null);
+  const saveTimer  = useRef(null);
 
   const showToast = useCallback((msg) => {
     setToastMsg(msg);
@@ -1218,9 +1422,6 @@ export default function App() {
     toastTimer.current = setTimeout(() => setToastMsg(null), 1800);
   }, []);
 
-  // --------------------------------------------------------
-  // ★ データ読み込み（ユーザー名をキーに GAS から取得）
-  // --------------------------------------------------------
   const loadData = useCallback(async (userName) => {
     setLoadError(null);
     setLoaded(false);
@@ -1242,20 +1443,14 @@ export default function App() {
     }
   }, []);
 
-  // ログイン済みの場合はマウント時にデータを読み込む
   useEffect(() => {
     if (currentUser) loadData(currentUser);
   }, [currentUser, loadData]);
 
-  // ログイン未済の場合はログイン画面を表示
   useEffect(() => {
     if (!currentUser) setScreen("login");
   }, [currentUser]);
 
-  // --------------------------------------------------------
-  // ★ データ保存（ユーザー名をキーに GAS へ書き込み）
-  //    連続操作で何度も叩かないよう 1.5秒デバウンス
-  // --------------------------------------------------------
   useEffect(() => {
     if (!loaded || !data || !currentUser) return;
     clearTimeout(saveTimer.current);
@@ -1271,13 +1466,11 @@ export default function App() {
     }, 1500);
   }, [data, loaded, currentUser, showToast]);
 
-  // ログイン処理
   const handleLogin = (userName) => {
     sessionStorage.setItem("qs_current_user", userName);
     setCurrentUser(userName);
   };
 
-  // ログアウト処理
   const handleLogout = () => {
     if (!window.confirm("ログアウトしますか？")) return;
     clearTimeout(saveTimer.current);
@@ -1293,6 +1486,11 @@ export default function App() {
     setData(prev => completeQuest(prev, taskId));
   };
 
+  /* 改善2: クエスト取り消し */
+  const handleUncompleteQuest = (taskId) => {
+    setData(prev => uncompleteQuest(prev, taskId));
+  };
+
   const handleCreateTask = (input) => {
     setData(prev => {
       let d = addTask(prev, input);
@@ -1305,9 +1503,10 @@ export default function App() {
   const handleUpdateTask = (input) => {
     setData(prev => {
       let d = updateTask(prev, selectedTaskId, {
-        title: input.title.trim() || "無題の宿題",
-        type: input.type,
-        target: input.type === "SINGLE" ? 1 : Number(input.target) || 1,
+        title:    input.title.trim() || "無題の宿題",
+        type:     input.type,
+        subject:  input.subject,             /* 改善3 */
+        target:   input.type === "SINGLE" ? 1 : Number(input.target) || 1,
         deadline: input.deadline,
       });
       d = ensureTodayQuestsForce(d);
@@ -1316,19 +1515,29 @@ export default function App() {
     setScreen("taskDetail");
   };
 
+  /* 改善1: 並び替え */
+  const handleReorder = (fromIndex, toIndex) => {
+    setData(prev => {
+      const d = reorderTasks(prev, fromIndex, toIndex);
+      return ensureTodayQuestsForce(d);
+    });
+  };
+
   function ensureTodayQuestsForce(d0) {
     const d = structuredClone(d0);
     const today = todayStr();
     const existing = d.dailyQuestsByDate[today] || [];
     const existingMap = new Map(existing.map(q => [q.taskId, q]));
+    const sorted = [...d.tasks].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
     const rebuilt = [];
-    for (const task of d.tasks) {
+    for (const task of sorted) {
       const prevQ = existingMap.get(task.id);
       if (prevQ?.completed) { rebuilt.push(prevQ); continue; }
       const goal = calcDailyGoal(task, today);
       if (goal > 0) {
         rebuilt.push({ taskId: task.id, targetAmount: goal, completedAmount: 0, completed: false });
-        task.dailyGoal = goal;
+        const orig = d.tasks.find(t => t.id === task.id);
+        if (orig) orig.dailyGoal = goal;
       }
     }
     d.dailyQuestsByDate[today] = rebuilt;
@@ -1363,7 +1572,6 @@ export default function App() {
     <div className="qs-root">
       <GlobalStyle />
 
-      {/* トースト（保存中インジケーター兼用） */}
       {toastMsg && (
         <div className="qs-toast"><Sparkles size={14} />{toastMsg}</div>
       )}
@@ -1373,7 +1581,6 @@ export default function App() {
         </div>
       )}
 
-      {/* 画面ルーティング */}
       {screen === "login"   && <LoginScreen onLogin={handleLogin} />}
       {screen === "splash"  && <Splash />}
       {screen === "loading" && <LoadingScreen />}
@@ -1382,10 +1589,21 @@ export default function App() {
       )}
 
       {loaded && data && screen === "home" && (
-        <Home data={data} onCompleteQuest={handleCompleteQuest} go={go} toast={showToast} />
+        <Home
+          data={data}
+          onCompleteQuest={handleCompleteQuest}
+          onUncompleteQuest={handleUncompleteQuest}
+          go={go}
+          toast={showToast}
+        />
       )}
       {loaded && data && screen === "tasks" && (
-        <TaskList data={data} go={go} openTask={(id) => { setSelectedTaskId(id); setScreen("taskDetail"); }} />
+        <TaskList
+          data={data}
+          go={go}
+          openTask={(id) => { setSelectedTaskId(id); setScreen("taskDetail"); }}
+          onReorder={handleReorder}
+        />
       )}
       {loaded && data && screen === "taskForm" && (
         <TaskForm initial={null} onSave={handleCreateTask} onCancel={() => setScreen("tasks")} />
