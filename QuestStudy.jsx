@@ -281,6 +281,7 @@ function addTask(data, taskInput) {
     title: taskInput.title.trim() || "無題の宿題",
     type: taskInput.type,
     subject: taskInput.subject || "other",   /* 改善3 */
+    notes: taskInput.notes || "",            /* フリーテキストメモ */
     target,
     progress: 0,
     deadline: taskInput.deadline,
@@ -306,6 +307,7 @@ function updateTask(data, taskId, patch) {
   task.completed = task.progress >= task.target;
   if (task.completed && !task.completedDate) task.completedDate = todayStr();
   if (!task.completed) task.completedDate = null;
+  if (patch.notes !== undefined) task.notes = patch.notes;
   return evalAchievements(d);
 }
 
@@ -716,6 +718,121 @@ function GlobalStyle() {
       }
       .qs-toggle.on .knob { left: 23px; }
 
+      /* textarea */
+      .qs-field textarea {
+        width: 100%;
+        border: 2px solid #EFE3CF;
+        background: #FFFDF8;
+        border-radius: 12px;
+        padding: 11px 12px;
+        font-size: 14px;
+        font-family: 'Zen Maru Gothic', sans-serif;
+        color: var(--c-ink);
+        box-sizing: border-box;
+        resize: vertical;
+        min-height: 80px;
+        line-height: 1.6;
+      }
+      .qs-field textarea:focus { outline: 2px solid var(--c-blue); border-color: var(--c-blue); }
+
+      /* ホーム画面チケット展開 */
+      .qs-ticket-expand {
+        padding: 10px 14px 12px 22px;
+        font-size: 12.5px;
+        color: var(--c-sub);
+        line-height: 1.65;
+        white-space: pre-wrap;
+        word-break: break-all;
+        border-top: 1px dashed #E3D8C6;
+      }
+      .qs-ticket-toggle {
+        width: 100%;
+        background: none;
+        border: none;
+        font-size: 11.5px;
+        color: var(--c-sub);
+        text-align: left;
+        padding: 6px 14px 8px 22px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+
+      /* 実績グラフ */
+      .qs-stats-section {
+        margin-bottom: 18px;
+      }
+      .qs-stats-section .stats-title {
+        font-family: 'M PLUS Rounded 1c', sans-serif;
+        font-weight: 800;
+        font-size: 14px;
+        color: var(--c-navy);
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .qs-stats-card {
+        background: var(--c-card);
+        border-radius: 16px;
+        padding: 14px 16px;
+        box-shadow: 0 2px 8px rgba(43,35,32,0.06);
+        margin-bottom: 12px;
+      }
+      .qs-stats-card .sc-label {
+        font-size: 12px;
+        color: var(--c-sub);
+        margin-bottom: 10px;
+        font-weight: 700;
+      }
+      .qs-stats-card .sc-total {
+        font-family: 'Fredoka', sans-serif;
+        font-size: 26px;
+        font-weight: 700;
+        color: var(--c-navy);
+        margin-bottom: 10px;
+      }
+      /* 水平積み上げバー */
+      .qs-stacked-bar {
+        display: flex;
+        height: 22px;
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 8px;
+        background: #EFE7D8;
+      }
+      .qs-stacked-bar-seg {
+        height: 100%;
+        transition: width .4s ease;
+      }
+      .qs-stacked-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 10px;
+        margin-top: 6px;
+      }
+      .qs-stacked-legend-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        color: var(--c-sub);
+      }
+      .qs-stacked-legend-dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 3px;
+        flex-shrink: 0;
+      }
+      /* ドーナツグラフ（タスク数） */
+      .qs-donut-wrap {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .qs-donut-wrap svg { flex-shrink: 0; }
+
       .qs-ach-grid {
         display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
       }
@@ -964,6 +1081,8 @@ function Home({ data, onCompleteQuest, onUncompleteQuest, go, toast }) {
 
   /* 改善2: 取り消しホバー状態 */
   const [hoverUndo, setHoverUndo] = useState(null);
+  /* チケット展開状態 */
+  const [expandedTicket, setExpandedTicket] = useState(null);
 
   return (
     <>
@@ -1026,43 +1145,59 @@ function Home({ data, onCompleteQuest, onUncompleteQuest, go, toast }) {
           if (!task) return null;
           const meta = TYPE_META[task.type];
           const subj = SUBJECT_CATEGORIES.find(s => s.id === task.subject);
+          const isExpanded = expandedTicket === q.taskId;
+          const hasNotes = task.notes && task.notes.trim().length > 0;
           return (
-            <div key={q.taskId} className={"qs-ticket" + (q.completed ? " done" : "")}>
-              <div className="qs-ticket-stripe" style={{ background: meta.color }} />
-              <div className="qs-ticket-body">
-                <div className={"t-title" + (q.completed ? " done" : "")}>
-                  {subj && <span style={{ marginRight: 4 }}>{subj.icon}</span>}
-                  {task.title}
+            <div key={q.taskId} className={"qs-ticket" + (q.completed ? " done" : "")} style={{ flexDirection: "column", alignItems: "stretch" }}>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                <div className="qs-ticket-stripe" style={{ background: meta.color, alignSelf: "stretch" }} />
+                <div
+                  className="qs-ticket-body"
+                  style={{ cursor: hasNotes ? "pointer" : "default" }}
+                  onClick={() => hasNotes && setExpandedTicket(isExpanded ? null : q.taskId)}
+                >
+                  <div className={"t-title" + (q.completed ? " done" : "")}>
+                    {subj && <span style={{ marginRight: 4 }}>{subj.icon}</span>}
+                    {task.title}
+                    {hasNotes && (
+                      <span style={{ marginLeft: 6, fontSize: 11, color: "var(--c-sub)" }}>
+                        {isExpanded ? "▲" : "▼"}
+                      </span>
+                    )}
+                  </div>
+                  <div className="t-amount">{q.targetAmount}{meta.unit}</div>
                 </div>
-                <div className="t-amount">{q.targetAmount}{meta.unit}</div>
+                <div className="qs-ticket-perf" />
+                {/* 改善2: 完了済みはもう一度タップで取り消し */}
+                <button
+                  className="qs-stamp"
+                  onClick={() => {
+                    if (q.completed) {
+                      onUncompleteQuest(task.id);
+                      toast("↩ 取り消しました");
+                    } else {
+                      onCompleteQuest(task.id);
+                      toast(`+${q.targetAmount * meta.xp}XP ・ +${q.targetAmount * meta.coin}コイン`);
+                    }
+                  }}
+                  onMouseEnter={() => q.completed && setHoverUndo(q.taskId)}
+                  onMouseLeave={() => setHoverUndo(null)}
+                >
+                  <span className={
+                    "qs-stamp-circle" +
+                    (q.completed
+                      ? (hoverUndo === q.taskId ? " undo-hint" : " checked")
+                      : "")
+                  }>
+                    {q.completed && hoverUndo === q.taskId
+                      ? <RotateCcw size={16} />
+                      : <Check size={20} />}
+                  </span>
+                </button>
               </div>
-              <div className="qs-ticket-perf" />
-              {/* 改善2: 完了済みはもう一度タップで取り消し */}
-              <button
-                className="qs-stamp"
-                onClick={() => {
-                  if (q.completed) {
-                    onUncompleteQuest(task.id);
-                    toast("↩ 取り消しました");
-                  } else {
-                    onCompleteQuest(task.id);
-                    toast(`+${q.targetAmount * meta.xp}XP ・ +${q.targetAmount * meta.coin}コイン`);
-                  }
-                }}
-                onMouseEnter={() => q.completed && setHoverUndo(q.taskId)}
-                onMouseLeave={() => setHoverUndo(null)}
-              >
-                <span className={
-                  "qs-stamp-circle" +
-                  (q.completed
-                    ? (hoverUndo === q.taskId ? " undo-hint" : " checked")
-                    : "")
-                }>
-                  {q.completed && hoverUndo === q.taskId
-                    ? <RotateCcw size={16} />
-                    : <Check size={20} />}
-                </span>
-              </button>
+              {isExpanded && hasNotes && (
+                <div className="qs-ticket-expand">{task.notes}</div>
+              )}
             </div>
           );
         })}
@@ -1179,6 +1314,7 @@ function TaskForm({ initial, onSave, onCancel, onDelete }) {
   const [subject,  setSubject]  = useState(initial?.subject  || "other");
   const [target,   setTarget]   = useState(initial?.target   || 10);
   const [deadline, setDeadline] = useState(initial?.deadline || addDays(todayStr(), 14));
+  const [notes,    setNotes]    = useState(initial?.notes    || "");
 
   const meta = TYPE_META[type];
   const totalXp   = type === "SINGLE" ? meta.xp   : (Number(target) || 0) * meta.xp;
@@ -1227,6 +1363,14 @@ function TaskForm({ initial, onSave, onCancel, onDelete }) {
           <label>締切</label>
           <input type="date" value={deadline} onChange={e => setDeadline(e.target.value)} />
         </div>
+        <div className="qs-field">
+          <label>メモ・詳細（任意）</label>
+          <textarea
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            placeholder="例：p.10〜p.30、問題集の前半のみ、等"
+          />
+        </div>
         <div className="qs-card" style={{ background: "#FFF8EC" }}>
           <div style={{ fontSize: 12.5, color: "var(--c-sub)", marginBottom: 6 }}>獲得予定（自動計算）</div>
           <div className="qs-stat-row" style={{ marginTop: 0 }}>
@@ -1234,7 +1378,7 @@ function TaskForm({ initial, onSave, onCancel, onDelete }) {
             <div className="qs-pill"><Coins size={14} color="#E0A400" /> コイン {totalCoin}</div>
           </div>
         </div>
-        <button className="qs-btn-primary" onClick={() => onSave({ title, type, subject, target, deadline })}>
+        <button className="qs-btn-primary" onClick={() => onSave({ title, type, subject, target, deadline, notes })}>
           {initial ? "更新する" : "保存する"}
         </button>
         {initial && (
@@ -1304,6 +1448,12 @@ function TaskDetail({ task, onBack, onEdit, onComplete }) {
             <div className="qs-pill"><Coins size={14} color="#E0A400" /> {meta.coin} コイン</div>
           </div>
         </div>
+        {task.notes && task.notes.trim() && (
+          <div className="qs-card">
+            <div style={{ fontSize: 12, color: "var(--c-sub)", marginBottom: 6, fontWeight: 700 }}>📝 メモ・詳細</div>
+            <div style={{ fontSize: 13.5, lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{task.notes}</div>
+          </div>
+        )}
         {!task.completed ? (
           <button className="qs-btn-primary" onClick={onComplete}>✅ 宿題を完了にする</button>
         ) : (
@@ -1318,6 +1468,174 @@ function TaskDetail({ task, onBack, onEdit, onComplete }) {
    Achievements
    ============================================================ */
 
+/* ============================================================
+   Homework Stats — 完了宿題実績グラフ
+   ============================================================ */
+
+/* 教科ごとのカラーパレット */
+const SUBJECT_COLORS = {
+  math:     "#4FB4E8",
+  japanese: "#FF6B6B",
+  science:  "#4CAF7D",
+  social:   "#FFC93C",
+  english:  "#9B59B6",
+  research: "#E67E22",
+  essay:    "#1ABC9C",
+  other:    "#C4B9A9",
+};
+
+function StackedBar({ segments, total }) {
+  if (total === 0) {
+    return <div className="qs-stacked-bar" style={{ background: "#EFE7D8" }} />;
+  }
+  return (
+    <div className="qs-stacked-bar">
+      {segments.map(seg => seg.value > 0 && (
+        <div
+          key={seg.id}
+          className="qs-stacked-bar-seg"
+          style={{ width: ((seg.value / total) * 100) + "%", background: seg.color }}
+          title={`${seg.label}: ${seg.value}`}
+        />
+      ))}
+    </div>
+  );
+}
+
+function StackedLegend({ segments }) {
+  return (
+    <div className="qs-stacked-legend">
+      {segments.filter(s => s.value > 0).map(seg => (
+        <div key={seg.id} className="qs-stacked-legend-item">
+          <div className="qs-stacked-legend-dot" style={{ background: seg.color }} />
+          <span>{seg.label} {seg.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* SVGドーナツグラフ（完了タスク数） */
+function DonutChart({ segments, total, size = 80 }) {
+  const r = 30;
+  const cx = size / 2;
+  const cy = size / 2;
+  const circumference = 2 * Math.PI * r;
+
+  if (total === 0) {
+    return (
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        <circle cx={cx} cy={cy} r={r} fill="none" stroke="#EFE7D8" strokeWidth="10" />
+      </svg>
+    );
+  }
+
+  let offset = 0;
+  const arcs = segments.filter(s => s.value > 0).map(seg => {
+    const pct = seg.value / total;
+    const dash = pct * circumference;
+    const arc = { ...seg, dash, offset };
+    offset += dash;
+    return arc;
+  });
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ transform: "rotate(-90deg)" }}>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#EFE7D8" strokeWidth="10" />
+      {arcs.map(arc => (
+        <circle
+          key={arc.id}
+          cx={cx} cy={cy} r={r}
+          fill="none"
+          stroke={arc.color}
+          strokeWidth="10"
+          strokeDasharray={`${arc.dash} ${circumference - arc.dash}`}
+          strokeDashoffset={-arc.offset}
+        />
+      ))}
+    </svg>
+  );
+}
+
+function HomeworkStats({ tasks }) {
+  const completed = tasks.filter(t => t.completed);
+
+  /* カテゴリ別セグメントを生成するヘルパー */
+  const makeSegments = (valueFn) =>
+    SUBJECT_CATEGORIES.map(s => ({
+      id:    s.id,
+      label: s.icon + s.label,
+      color: SUBJECT_COLORS[s.id] || "#C4B9A9",
+      value: valueFn(s.id),
+    }));
+
+  /* ① 完了タスク数（ドーナツ） */
+  const taskCountSegs = makeSegments(id =>
+    completed.filter(t => t.subject === id).length
+  );
+  const totalTaskCount = completed.length;
+
+  /* ② 完了した総ページ数（PAGEのみ、積み上げ棒） */
+  const pageSegs = makeSegments(id =>
+    completed.filter(t => t.subject === id && t.type === "PAGE").reduce((s, t) => s + t.target, 0)
+  );
+  const totalPages = pageSegs.reduce((s, seg) => s + seg.value, 0);
+
+  /* ③ 完了した総回数（COUNTのみ、積み上げ棒） */
+  const countSegs = makeSegments(id =>
+    completed.filter(t => t.subject === id && t.type === "COUNT").reduce((s, t) => s + t.target, 0)
+  );
+  const totalCounts = countSegs.reduce((s, seg) => s + seg.value, 0);
+
+  /* ④ 完了した総単発数（SINGLEのみ、積み上げ棒） */
+  const singleSegs = makeSegments(id =>
+    completed.filter(t => t.subject === id && t.type === "SINGLE").length
+  );
+  const totalSingles = singleSegs.reduce((s, seg) => s + seg.value, 0);
+
+  return (
+    <div className="qs-stats-section">
+      <div className="stats-title">📊 完了宿題の実績</div>
+
+      {/* ① タスク数 — ドーナツ */}
+      <div className="qs-stats-card">
+        <div className="sc-label">完了したタスク数</div>
+        <div className="qs-donut-wrap">
+          <DonutChart segments={taskCountSegs} total={totalTaskCount} size={88} />
+          <div style={{ flex: 1 }}>
+            <div className="sc-total">{totalTaskCount}<span style={{ fontSize: 13, fontWeight: 400, color: "var(--c-sub)", marginLeft: 4 }}>件</span></div>
+            <StackedLegend segments={taskCountSegs} />
+          </div>
+        </div>
+      </div>
+
+      {/* ② 総ページ数 */}
+      <div className="qs-stats-card">
+        <div className="sc-label">完了した総ページ数</div>
+        <div className="sc-total">{totalPages}<span style={{ fontSize: 13, fontWeight: 400, color: "var(--c-sub)", marginLeft: 4 }}>ページ</span></div>
+        <StackedBar segments={pageSegs} total={totalPages} />
+        <StackedLegend segments={pageSegs} />
+      </div>
+
+      {/* ③ 総回数 */}
+      <div className="qs-stats-card">
+        <div className="sc-label">完了した総回数</div>
+        <div className="sc-total">{totalCounts}<span style={{ fontSize: 13, fontWeight: 400, color: "var(--c-sub)", marginLeft: 4 }}>回</span></div>
+        <StackedBar segments={countSegs} total={totalCounts} />
+        <StackedLegend segments={countSegs} />
+      </div>
+
+      {/* ④ 総単発数 */}
+      <div className="qs-stats-card">
+        <div className="sc-label">完了した総単発数</div>
+        <div className="sc-total">{totalSingles}<span style={{ fontSize: 13, fontWeight: 400, color: "var(--c-sub)", marginLeft: 4 }}>個</span></div>
+        <StackedBar segments={singleSegs} total={totalSingles} />
+        <StackedLegend segments={singleSegs} />
+      </div>
+    </div>
+  );
+}
+
 function Achievements({ data }) {
   const obtained = new Set(data.userAchievements.map(a => a.achievementId));
   return (
@@ -1326,6 +1644,7 @@ function Achievements({ data }) {
         <h1 className="qs-display">実績</h1>
       </div>
       <div className="qs-scroll">
+        <HomeworkStats tasks={data.tasks} />
         <div style={{ fontSize: 12.5, color: "var(--c-sub)", marginBottom: 14 }}>
           {obtained.size} / {ACHIEVEMENTS.length} 個獲得
         </div>
@@ -1508,6 +1827,7 @@ export default function App() {
         subject:  input.subject,             /* 改善3 */
         target:   input.type === "SINGLE" ? 1 : Number(input.target) || 1,
         deadline: input.deadline,
+        notes:    input.notes || "",
       });
       d = ensureTodayQuestsForce(d);
       return d;
